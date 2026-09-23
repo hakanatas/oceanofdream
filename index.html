@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0A1F26" />
+    <title>Hayaller Okyanusu · FTC</title>
+    <meta
+      name="description"
+      content="Hayaller Okyanusu, FIRST Tech Challenge topluluğunu geleceğe dair hayallerini kuma yazmaya ve dalgalarla okyanusa bırakmaya davet eden katılımcı bir dijital enstalasyondur. Birlikte hayal etme gücümüz, geleceği birlikte inşa etme gücümüzdür."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Hayaller Okyanusu · FTC" />
+    <meta property="og:description" content="Robotun dünyayı değiştirebilseydi ne yapardın? Hayalini kuma yaz, dalgalar okyanusa taşısın." />
+    <meta property="og:locale" content="tr_TR" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#deneyim" aria-label="Hayaller Okyanusu ana sayfa">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><use href="#mark" /></svg>
+        <span>Hayaller Okyanusu <em>FTC</em></span>
+      </a>
+      <nav aria-label="Ana menü">
+        <a href="#deneyim">Deneyim</a>
+        <a href="#ftc">FTC nedir?</a>
+        <a href="#degerler">Değerler</a>
+        <a href="#kurulum">Etkinliğinde kur</a>
+      </nav>
+    </header>
+
+    <main>
+      <!-- ============ DENEYİM ============ -->
+      <section id="deneyim" class="experience" aria-label="Hayaller Okyanusu deneyimi">
+        <canvas id="sand" aria-hidden="true"></canvas>
+        <p id="sandText" class="sr-only" aria-live="polite"></p>
+
+        <div id="panel" class="panel" role="dialog" aria-labelledby="panelTitle">
+          <!-- 1. Giriş -->
+          <div class="step" data-step="intro">
+            <p class="eyebrow" data-config="eventLine"></p>
+            <h1 id="panelTitle">Hayaller Okyanusu</h1>
+            <p class="lead">
+              Hayaller Okyanusu, katılımcı bir dijital enstalasyonun birlikte umut etmeyi ve hayal
+              kurmayı nasıl besleyebileceğini keşfediyor. FIRST Tech Challenge topluluğunu —
+              öğrencileri, mentorları, gönüllüleri ve aileleri — geleceğe dair hayallerini kuma
+              yazmaya ve dalgalarla okyanusa bırakmaya davet ediyor.
+            </p>
+            <p class="lead strong">
+              Birlikte hayal etme gücümüz, geleceği birlikte inşa etme gücümüzdür. Hadi birlikte
+              hayal kuralım.
+            </p>
+            <div class="actions">
+              <button class="btn primary" data-go="consent">Başla</button>
+              <button class="btn ghost" data-go="find">Hayalimi bul</button>
+            </div>
+          </div>
+
+          <!-- 2. Onay -->
+          <div class="step" data-step="consent" hidden>
+            <p class="eyebrow">Okyanus hayallerini duymak istiyor</p>
+            <h2>Hayallerin okyanusa bırakılacak</h2>
+            <p class="lead">
+              Sana üç soru soracağız ve cevapların kuma yazılmış olarak görünecek. Paylaştığın hiçbir
+              şey kimliğini ortaya çıkarmaz — lütfen adını, takım numaranı veya iletişim bilgisi
+              yazma.
+            </p>
+            <label class="check">
+              <input type="checkbox" id="consentBox" />
+              <span>Sözlerimi Hayaller Okyanusu'nun bir parçası olarak paylaşmayı kabul ediyorum.</span>
+            </label>
+            <div class="actions">
+              <button class="btn primary" id="consentGo" disabled>Başlayalım</button>
+              <button class="btn ghost" data-go="intro">Geri</button>
+            </div>
+          </div>
+
+          <!-- 3. Sorular (1–3) -->
+          <div class="step" data-step="question" hidden>
+            <p class="eyebrow"><span id="qIndex">1</span> / 3</p>
+            <h2 id="qText"></h2>
+            <p id="qFrom" class="hint" hidden>Bu soruyu senden önceki bir katılımcı bıraktı.</p>
+            <form id="qForm" class="write">
+              <textarea
+                id="qInput"
+                rows="2"
+                maxlength="120"
+                placeholder="Hayallerinin dünyasına adım at..."
+                required
+              ></textarea>
+              <div class="write-meta"><span id="qCount">0</span>/120</div>
+              <div class="actions">
+                <button class="btn primary" type="submit">Kuma yaz</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- 4. İmza -->
+          <div class="step" data-step="signature" hidden>
+            <p class="eyebrow">Hayal imzan</p>
+            <h2>Seni anlatan üç kelime bırak.</h2>
+            <p class="hint">Bu üç kelime hayalinin imzası olacak. Unutma — hayalini sonra bu kelimelerle bulacaksın.</p>
+            <form id="sigForm" class="sig">
+              <input maxlength="18" required aria-label="Birinci kelime" placeholder="meraklı" />
+              <input maxlength="18" required aria-label="İkinci kelime" placeholder="cesur" />
+              <input maxlength="18" required aria-label="Üçüncü kelime" placeholder="mühendis" />
+              <div class="actions">
+                <button class="btn primary" type="submit">İleri</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- 5. Gözden geçir + süsle -->
+          <div class="step" data-step="review" hidden>
+            <p class="eyebrow">Mesajın</p>
+            <h2>Kumu süsle</h2>
+            <p class="hint">Bir simgeye dokunup kuma ekle; sürükleyerek taşı, köşedeki tutamakla boyutlandır, × ile sil.</p>
+            <div id="tray" class="tray" role="group" aria-label="Kum simgeleri"></div>
+            <div class="actions">
+              <button class="btn primary" id="releaseBtn">Okyanusa bırak</button>
+              <button class="btn ghost" id="editBtn">Cevabı değiştir</button>
+            </div>
+          </div>
+
+          <!-- 5b. Cevap düzenle -->
+          <div class="step" data-step="edit" hidden>
+            <p class="eyebrow">Cevabı değiştir</p>
+            <div id="editList" class="edit-list"></div>
+            <div class="actions">
+              <button class="btn primary" id="editSave">Kuma yeniden yaz</button>
+              <button class="btn ghost" data-go="review">Olduğu gibi kalsın</button>
+            </div>
+          </div>
+
+          <!-- 6. Bırakıldı -->
+          <div class="step" data-step="released" hidden>
+            <p class="eyebrow">Okyanusa bırakıldı</p>
+            <h2>Teşekkürler.</h2>
+            <p class="lead" data-config="releasedBody"></p>
+            <div class="signature">
+              <span>Hayal imzan</span>
+              <strong id="sigOut"></strong>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="postcardBtn">Kartpostalı indir</button>
+              <button class="btn ghost" id="shareBtn">Paylaş</button>
+              <button class="btn ghost" id="againBtn">Yeni bir hayal gönder</button>
+            </div>
+            <p id="shareStatus" class="hint" role="status"></p>
+          </div>
+
+          <!-- 7. Hayalini bul -->
+          <div class="step" data-step="find" hidden>
+            <p class="eyebrow">Hayalini bul</p>
+            <h2>Üç kelimelik imzanı gir</h2>
+            <form id="findForm" class="sig">
+              <input maxlength="18" required aria-label="Birinci kelime" />
+              <input maxlength="18" required aria-label="İkinci kelime" />
+              <input maxlength="18" required aria-label="Üçüncü kelime" />
+              <div class="actions">
+                <button class="btn primary" type="submit">Kumda ara</button>
+                <button class="btn ghost" type="button" data-go="intro">Geri</button>
+              </div>
+            </form>
+            <p id="findStatus" class="hint" role="status"></p>
+          </div>
+        </div>
+
+        <a class="scroll-cue" href="#ftc" aria-label="FTC hakkında bilgiye in">
+          <span>FIRST Tech Challenge</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+        </a>
+      </section>
+
+      <!-- ============ FTC NEDİR ============ -->
+      <section id="ftc" class="info">
+        <div class="wrap">
+          <p class="eyebrow">Neden FTC?</p>
+          <h2>FIRST Tech Challenge nedir?</h2>
+          <p class="lead">
+            FIRST Tech Challenge (FTC), ortaokul ve lise öğrencilerinden oluşan takımların her sezon
+            açıklanan yeni bir oyun için robotlarını tasarladığı, ürettiği ve programladığı
+            uluslararası bir robotik programıdır. Ama asıl hedef robot değil: bilimi, mühendisliği ve
+            teknolojiyi kendi elleriyle keşfeden, birlikte hayal kurmayı bilen insanlar yetiştirmek.
+          </p>
+
+          <div class="cards">
+            <article class="card">
+              <span class="num">01</span>
+              <h3>Takım</h3>
+              <p>7–12. sınıf aralığındaki öğrencilerden oluşan, en fazla 15 kişilik takımlar; yanlarında mentorlar ve koçlar.</p>
+            </article>
+            <article class="card">
+              <span class="num">02</span>
+              <h3>Robot</h3>
+              <p>Yeniden kullanılabilir bir platform, Java veya blok tabanlı programlama ve sezon oyununa özel mekanizmalar.</p>
+            </article>
+            <article class="card">
+              <span class="num">03</span>
+              <h3>Maç</h3>
+              <p>İki takımın bir ittifak kurduğu 2'ye 2 maçlar: 30 saniyelik otonom bölüm, ardından 2 dakikalık sürücü kontrollü bölüm.</p>
+            </article>
+            <article class="card">
+              <span class="num">04</span>
+              <h3>Portfolyo</h3>
+              <p>Mühendislik süreci, tasarım kararları ve topluluk çalışmaları; jüri görüşmeleri ve Inspire gibi ödüllerle değerlendirilir.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ DEĞERLER ============ -->
+      <section id="degerler" class="info alt">
+        <div class="wrap">
+          <p class="eyebrow">Okyanusun dalgaları</p>
+          <h2>Hayallerimizi taşıyan değerler</h2>
+          <p class="lead">
+            FIRST'ün temel değerleri, okyanustaki her hayalin arkasındaki rüzgâr. Kuma yazdığın her
+            söz bu değerlerden birine dokunuyor.
+          </p>
+          <ul class="values">
+            <li><strong>Keşif</strong><span>Yeni beceriler ve fikirler keşfederiz.</span></li>
+            <li><strong>İnovasyon</strong><span>Sorunları yaratıcılık ve azimle çözeriz.</span></li>
+            <li><strong>Etki</strong><span>Öğrendiklerimizi dünyamızı iyileştirmek için kullanırız.</span></li>
+            <li><strong>Kapsayıcılık</strong><span>Birbirimize saygı duyar, farklılıklarımızı kucaklarız.</span></li>
+            <li><strong>Takım çalışması</strong><span>Birlikte çalıştığımızda daha güçlüyüz.</span></li>
+            <li><strong>Eğlence</strong><span>Yaptığımız işten keyif alır ve bunu kutlarız.</span></li>
+          </ul>
+
+          <div class="quote">
+            <p>
+              <em>Gracious Professionalism®</em> — yüksek kaliteli iş çıkarırken başkalarının
+              değerini bilmek ve topluluğa saygı göstermek. <em>Coopertition®</em> — rakiplerle bile
+              yardımlaşarak rekabet etmek. Okyanusa bırakılan her hayal, bir başkasının hayaliyle
+              birlikte dalgalanır.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ KURULUM ============ -->
+      <section id="kurulum" class="info">
+        <div class="wrap">
+          <p class="eyebrow">Turnuvan, okulun, fuarın</p>
+          <h2>Etkinliğinde Hayaller Okyanusu kur</h2>
+          <ol class="steps">
+            <li>
+              <strong>Kiosk tableti.</strong> Pit alanına veya girişe bir tablet koy ve sayfayı
+              <code>?kiosk=1</code> ile aç. Her katılımcıdan sonra deneyim kendiliğinden başa döner.
+            </li>
+            <li>
+              <strong>Okyanus ekranı.</strong> Sahne ekranında veya projeksiyonda
+              <code>?okyanus=1</code> ile yalnızca dalgaları ve süzülen hayalleri göster.
+            </li>
+            <li>
+              <strong>Soru zinciri.</strong> Her katılımcı bir sonrakine soru bırakır; böylece takımlar
+              arasında bir sohbet dalgası oluşur.
+            </li>
+            <li>
+              <strong>Kapanış.</strong> Ödül töreninden önce en güzel hayalleri seçip okyanus ekranında
+              birlikte okuyun.
+            </li>
+          </ol>
+          <p class="hint">
+            Not: Bu sürüm hayalleri yalnızca bu cihazın tarayıcısında saklar. Birden çok cihazın aynı
+            okyanusu paylaşması için bir sunucu bağlantısı gerekir (bkz. README).
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <p>
+          MIT Media Lab Critical Matter Group'un
+          <a href="https://mitoceanofdreams.com/" target="_blank" rel="noopener noreferrer">Ocean of Dreams</a>
+          çalışmasından ilham alınarak FTC topluluğu için Türkçe olarak hazırlanmıştır.
+        </p>
+        <p class="small">
+          Bu site bağımsız bir topluluk projesidir; FIRST® veya MIT ile resmî bir bağlantısı yoktur.
+          FIRST®, FIRST® Tech Challenge, Gracious Professionalism® ve Coopertition®, FIRST'ün tescilli
+          markalarıdır.
+        </p>
+      </div>
+    </footer>
+
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="mark" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="15" fill="#0A1F26" />
+        <path d="M4 18c3-4 6-4 9 0s6 4 9 0 5-3 6-2" fill="none" stroke="#e9c46a" stroke-width="2.2" stroke-linecap="round" />
+        <path d="M6 23c3-3 5-3 8 0s5 3 8 0" fill="none" stroke="#7fc8c0" stroke-width="1.6" stroke-linecap="round" />
+        <circle cx="16" cy="10" r="3" fill="none" stroke="#e9c46a" stroke-width="1.8" />
+      </symbol>
+    </svg>
+
+    <script src="js/app.js"></script>
+  </body>
+</html>
