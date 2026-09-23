@@ -5,6 +5,9 @@ enstalasyonundan ilham alan, **FIRST Tech Challenge** topluluğu için Türkçe 
 katılımcı bir web deneyimi. Kod ve metinler bu proje için sıfırdan yazıldı; orijinal
 sitenin kodu, görselleri veya logoları kullanılmadı.
 
+**Canlı site:** https://hakanatas.github.io/oceanofdream/
+(`gh-pages` dalından yayınlanır; siteyi güncellemek için değişiklikleri bu dala da gönder.)
+
 ## Deneyim
 
 1. **Giriş ve onay:** Katılımcı, sözlerinin kuma yazılacağını ve kimliğini belirten bilgi
