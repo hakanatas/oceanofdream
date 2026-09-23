@@ -49,14 +49,50 @@ GitHub Pages, Netlify veya Vercel'e olduğu gibi yüklenebilir.
 `js/app.js` dosyasının başındaki `CONFIG` nesnesinde etkinlik adı, soru metinleri, hazır
 sorular ve okyanusta süzülen örnek hayaller var.
 
-## Sınırlamalar ve sonraki adımlar
+## Hayalleri tabloda topla (Google E-Tablolar)
 
-- **Veriler yalnızca tarayıcıda (localStorage) saklanıyor.** Kiosk tablet ile okyanus
-  ekranının aynı hayalleri görmesi için `js/app.js` içindeki `store` nesnesini bir sunucuya
-  (ör. Supabase, Firebase) bağlamak gerekir. Arayüzün geri kalanı değişmez.
-- **Moderasyon yok.** Hayaller okyanus ekranında herkese gösterilecekse, sunucu tarafında
-  onay adımı eklenmeli.
-- Yalnızca Türkçe; gerekirse İngilizce eklemek için metinler tek bir sözlüğe taşınabilir.
+Her hayal bir Google E-Tablosu'na satır olarak düşer. Tabloda istediğin hayali
+**düzenleyebilir**, **silebilir** veya **gizleyebilirsin**; okyanus ekranı ve "Hayalimi bul"
+değişiklikleri birkaç saniye içinde görür. Sunucu kurmak veya ücret ödemek gerekmez.
+
+**Kurulum (bir kez, ~5 dakika):**
+
+1. [sheets.new](https://sheets.new) ile boş bir Google E-Tablosu aç, adını "Hayaller Okyanusu" koy.
+2. Menüden **Uzantılar → Apps Script**'i aç.
+3. Açılan editördeki her şeyi sil, [`backend/Code.gs`](backend/Code.gs) dosyasının tamamını
+   yapıştır ve **Kaydet**'e bas.
+4. Sağ üstten **Dağıt → Yeni dağıtım**. Tür olarak **Web uygulaması** seç:
+   - *Şu kullanıcı olarak yürüt:* **Ben**
+   - *Erişimi olan kullanıcılar:* **Herkes**
+5. **Dağıt**'a bas, Google'ın istediği izinleri onayla ("Gelişmiş → güvenli olmayan sayfaya git"
+   uyarısı kendi yazdığın betik için normaldir).
+6. Verilen `https://script.google.com/macros/s/.../exec` adresini kopyala ve
+   `js/app.js` içindeki `CONFIG.sheetUrl` alanına yapıştır. Değişikliği gönderdiğinde site bağlanır.
+   (Önce denemek istersen: `https://hakanatas.github.io/oceanofdream/?tablo=<exec adresi>`)
+
+**Tabloda moderasyon:**
+
+| Ne yapmak istiyorsun | Nasıl |
+| --- | --- |
+| Yazım hatasını düzelt / cümleyi değiştir | Hücreyi doğrudan düzenle |
+| Uygunsuz bir hayali kaldır | "Durum" sütununu **gizli** yap (menü: **Hayaller → Seçili satırları gizle**) ya da satırı sil |
+| Önce onaylamadan hiçbir şey görünmesin | `Code.gs` içinde `ONAY_BEKLE = true` yap, sonra **Dağıt → Dağıtımları yönet → Düzenle → Yeni sürüm**. Bu durumda yalnızca **onaylı** satırlar okyanusta görünür |
+
+Gizli satırlar okyanusta süzülmez, "Hayalimi bul" ile de bulunamaz ve soru zincirine girmez.
+Formül gibi görünen girdiler (`=`, `+`, `-`, `@` ile başlayan) tabloya düz metin olarak yazılır.
+
+`Code.gs` dosyasını değiştirirsen her seferinde **yeni sürüm** olarak yeniden dağıtman gerekir;
+`/exec` adresi aynı kalır.
+
+Tablo bağlantısı yokken veya internet koptuğunda hayaller cihazda kuyruğa alınır ve bağlantı
+gelince tabloya gönderilir.
+
+## Sınırlamalar
+
+- Tablo bağlı değilse hayaller yalnızca o tarayıcıda (localStorage) kalır.
+- Web uygulaması herkese açık olduğu için isteyen herkes hayal gönderebilir; bu yüzden
+  moderasyon tablodan yapılır. Büyük etkinliklerde `ONAY_BEKLE = true` önerilir.
+- Yalnızca Türkçe.
 
 ## Yasal not
 

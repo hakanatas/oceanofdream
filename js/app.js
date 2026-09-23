@@ -10,6 +10,9 @@
   // ------------------------------------------------------------------
   const CONFIG = {
     eventName: "FTC Türkiye",
+    // Google E-Tablolar bağlantısı (README → "Hayalleri tabloda topla").
+    // Boş bırakılırsa hayaller yalnızca bu tarayıcıda saklanır.
+    sheetUrl: "",
     kioskResetSeconds: 60,
     firstQuestion: "Robotum dünyada tek bir şeyi değiştirebilseydi, ...",
     giveQuestion: "Sıra sende... sıradaki katılımcıya ne sormak istersin?",
@@ -44,12 +47,22 @@
   const OCEAN_ONLY = params.has("okyanus");
   const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const trLower = (s) => s.trim().toLocaleLowerCase("tr-TR");
+  // Türkçe I/İ doğru küçülsün; aynı kural tablo tarafında da var (backend/Code.gs).
+  const trLower = (s) => String(s).trim().replace(/I/g, "ı").replace(/İ/g, "i").toLowerCase();
+  const sigKey = (words) => words.map(trLower).sort().join("|");
+  // ?tablo= ile adres denenebilir; hayaller başka bir sunucuya kaçmasın diye yalnızca Apps Script (veya yerel test).
+  const tabloParam = params.get("tablo") || "";
+  const SHEET_URL = /^(https:\/\/script\.google\.com\/|http:\/\/localhost[:/])/.test(tabloParam)
+    ? tabloParam
+    : CONFIG.sheetUrl;
 
   // ------------------------------------------------------------------
-  // Depolama — yalnızca bu tarayıcı. Paylaşımlı bir okyanus için bu
-  // nesneyi bir sunucu çağrısıyla değiştirmek yeterli.
+  // Depolama. Tablo bağlıysa hayaller oraya gönderilir; bağlantı yoksa
+  // veya koparsa bu tarayıcıda kuyruğa alınıp sonra yeniden denenir.
   // ------------------------------------------------------------------
+  const QUEUE_KEY = "hayaller-okyanusu:kuyruk:v1";
+  const remote = { dreams: null, question: null };
+
   const store = {
     read(key, fallback) {
       try {
@@ -73,23 +86,81 @@
       const all = this.dreams();
       all.push(entry);
       this.write(STORE_KEY, all.slice(-500));
+      if (entry.nextQuestion) {
+        const pool = this.read(QUESTION_KEY, []);
+        pool.push(entry.nextQuestion);
+        this.write(QUESTION_KEY, pool.slice(-50));
+      }
+      if (SHEET_URL) {
+        const queue = this.read(QUEUE_KEY, []);
+        queue.push(entry);
+        this.write(QUEUE_KEY, queue);
+        this.flush();
+      }
     },
-    findBySignature(words) {
-      const key = words.map(trLower).sort().join("|");
+    // Kuyruktaki hayalleri tabloya sırayla gönder.
+    async flush() {
+      if (!SHEET_URL || this.flushing) return;
+      this.flushing = true;
+      try {
+        let queue = this.read(QUEUE_KEY, []);
+        while (queue.length) {
+          const res = await fetch(SHEET_URL, {
+            method: "POST",
+            // text/plain: Apps Script CORS ön isteği desteklemez
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action: "add", dream: queue[0] }),
+          });
+          const data = await res.json();
+          if (!data.ok && data.error !== "eksik") break;
+          queue = this.read(QUEUE_KEY, []).slice(1);
+          this.write(QUEUE_KEY, queue);
+        }
+      } catch {
+        /* çevrimdışı: bir sonraki denemede gider */
+      } finally {
+        this.flushing = false;
+      }
+    },
+    // Okyanustaki hayalleri ve soru zincirini tablodan çek.
+    async refresh() {
+      if (!SHEET_URL) return;
+      try {
+        const res = await fetch(SHEET_URL + (SHEET_URL.includes("?") ? "&" : "?") + "action=list");
+        const data = await res.json();
+        if (data.ok) {
+          remote.dreams = data.dreams || [];
+          remote.question = data.question || null;
+        }
+      } catch {
+        /* son bilinen liste kullanılmaya devam eder */
+      }
+    },
+    async findBySignature(words) {
+      const key = sigKey(words);
+      if (SHEET_URL) {
+        try {
+          const url = SHEET_URL + (SHEET_URL.includes("?") ? "&" : "?") + "action=find&sig=" + encodeURIComponent(key);
+          const data = await (await fetch(url)).json();
+          if (data.ok) return data.dream;
+        } catch {
+          /* tabloya ulaşılamazsa bu cihazdakilere bak */
+        }
+      }
       return this.dreams()
         .reverse()
-        .find((d) => d.signature.map(trLower).sort().join("|") === key);
+        .find((d) => sigKey(d.signature) === key);
+    },
+    dreamTexts() {
+      if (remote.dreams) return remote.dreams;
+      return this.dreams().map((d) => d.answers[0]).filter(Boolean);
     },
     nextQuestion() {
+      if (SHEET_URL && remote.question) return { text: remote.question, fromVisitor: true };
       const pool = this.read(QUESTION_KEY, []);
       if (pool.length) return { text: pool[pool.length - 1], fromVisitor: true };
       const seeds = CONFIG.seedQuestions;
       return { text: seeds[Math.floor(Math.random() * seeds.length)], fromVisitor: false };
-    },
-    leaveQuestion(q) {
-      const pool = this.read(QUESTION_KEY, []);
-      pool.push(q);
-      this.write(QUESTION_KEY, pool.slice(-50));
     },
   };
 
@@ -136,7 +207,6 @@
     qIndex: 0,
     questions: [],
     answers: ["", "", ""],
-    draft: "",
     signature: [],
     stickers: [],
     selected: -1,
@@ -286,7 +356,7 @@
 
   function messageBlocks() {
     const src = state.shownDream || {
-      answers: state.answers.map((a, i) => (i === state.qIndex && state.step === "question" ? state.draft : a)),
+      answers: state.answers,
       signature: state.signature,
     };
     const blocks = [];
@@ -299,12 +369,19 @@
     return blocks;
   }
 
+  // Kuma yazma: parmak harf harf ilerler. `shown`, yazılmış karakter sayısı.
+  const writing = { shown: 0, total: 0, tip: null, speed: 16 };
+  const grains = [];
+
   function renderInk() {
+    if (sea.surgeAnim) return; // dalga yazıyı silerken yeniden çizme
     inkCtx.clearRect(0, 0, W, H);
     const blocks = messageBlocks();
     const r = writeRect;
+    writing.tip = null;
     if (r.w < 60 || r.h < 40) return;
 
+    let total = 0;
     if (blocks.length) {
       // En büyük yazı boyutunu, her şey alana sığana kadar küçült.
       let base = Math.min(64, r.w / 8, isMobile() ? 40 : 64);
@@ -325,25 +402,116 @@
         }
         base *= 0.92;
       }
+      for (const b of laid) for (const ln of b.lines) total += ln.length;
+      if (REDUCED) writing.shown = total;
+      writing.shown = Math.min(writing.shown, total);
+
+      let budget = writing.shown;
       let oy = r.y + Math.max(0, (r.h - laid.total) / 2);
       inkCtx.textBaseline = "top";
       for (const b of laid) {
         inkCtx.font = `700 ${b.px}px Caveat, cursive`;
         b.lines.forEach((ln, i) => {
+          if (budget <= 0) return;
           const tx = r.x;
           const ty = oy + b.y + i * b.px * 1.02;
+          const k = Math.min(ln.length, budget);
+          budget -= k;
+          const done = k >= ln.length;
+          let clipW;
+          if (done) clipW = inkCtx.measureText(ln).width + b.px;
+          else {
+            const whole = Math.floor(k);
+            clipW =
+              inkCtx.measureText(ln.slice(0, whole)).width +
+              inkCtx.measureText(ln[whole]).width * (k - whole);
+            writing.tip = { x: tx + clipW, y: ty + b.px * 0.62, size: b.px };
+          }
+          inkCtx.save();
+          inkCtx.beginPath();
+          inkCtx.rect(tx - b.px * 0.4, ty - b.px * 0.4, clipW + b.px * 0.4, b.px * 1.8);
+          inkCtx.clip();
           engrave(inkCtx, (col) => {
             inkCtx.fillStyle = col;
             inkCtx.fillText(ln, tx, ty);
           });
+          inkCtx.restore();
         });
       }
     }
+    writing.total = total;
 
     for (const s of state.stickers) drawSticker(inkCtx, s);
 
     const txt = blocks.map((b) => b.text).join(". ");
     document.getElementById("sandText").textContent = txt ? "Kuma yazılan: " + txt : "";
+  }
+
+  // Yazıyı baştan, yeniden yazdır.
+  function rewrite() {
+    writing.shown = 0;
+    renderInk();
+  }
+  // Animasyonu atla (kartpostal, dalga öncesi).
+  function finishWriting() {
+    writing.shown = Infinity;
+    renderInk();
+  }
+
+  // Parmağın ucundan savrulan kum taneleri.
+  function stepWriting(dt) {
+    if (writing.shown < writing.total && !sea.surgeAnim) {
+      writing.shown = Math.min(writing.total, writing.shown + dt * writing.speed * (0.7 + Math.random() * 0.6));
+      renderInk();
+      const tip = writing.tip;
+      if (tip) {
+        for (let i = 0; i < 3; i++) {
+          grains.push({
+            x: tip.x + (Math.random() - 0.5) * 4,
+            y: tip.y + (Math.random() - 0.5) * tip.size * 0.5,
+            vx: (Math.random() - 0.2) * 70,
+            vy: (Math.random() - 0.5) * 70,
+            life: 0.35 + Math.random() * 0.45,
+            r: 0.7 + Math.random() * 1.5,
+          });
+        }
+      }
+    }
+    for (let i = grains.length - 1; i >= 0; i--) {
+      const g = grains[i];
+      g.x += g.vx * dt;
+      g.y += g.vy * dt;
+      g.vx *= 0.9;
+      g.vy *= 0.9;
+      g.life -= dt;
+      if (g.life <= 0) grains.splice(i, 1);
+    }
+  }
+
+  function drawWriting() {
+    for (const g of grains) {
+      const a = Math.min(1, g.life * 2.5);
+      ctx.fillStyle = `rgba(118,86,50,${0.75 * a})`;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,244,220,${0.6 * a})`;
+      ctx.beginPath();
+      ctx.arc(g.x - 0.5, g.y - 0.5, g.r * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const tip = writing.tip;
+    if (tip && writing.shown < writing.total) {
+      // parmak ucunun kumdaki gölgesi
+      const rr = Math.max(8, tip.size * 0.22);
+      const g = ctx.createRadialGradient(tip.x + 2, tip.y + 3, 0, tip.x + 2, tip.y + 3, rr);
+      g.addColorStop(0, "rgba(60,40,20,0.35)");
+      g.addColorStop(1, "rgba(60,40,20,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(tip.x + 2, tip.y + 3, rr, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function drawSticker(c, s) {
@@ -366,8 +534,7 @@
   // Okyanus çizimi
   // ------------------------------------------------------------------
   function allDreamTexts() {
-    const mine = store.dreams().map((d) => d.answers[0]).filter(Boolean);
-    return [...CONFIG.seedDreams, ...mine];
+    return [...CONFIG.seedDreams, ...store.dreamTexts()];
   }
 
   // Her şeride tek bir hayal: yazılar üst üste binmez.
@@ -538,6 +705,8 @@
     ctx.drawImage(ink, 0, 0, W, H);
     const pts = drawOcean(t, dt);
     if (sea.surge > 0.05) erodeInk(pts);
+    stepWriting(dt);
+    drawWriting();
     drawSelection();
     requestAnimationFrame(frame);
   }
@@ -586,7 +755,6 @@
       qIndex: 0,
       questions: [],
       answers: ["", "", ""],
-      draft: "",
       signature: [],
       stickers: [],
       selected: -1,
@@ -608,7 +776,6 @@
     $("#qFrom").hidden = !q.fromVisitor;
     const input = $("#qInput");
     input.value = state.answers[i] || "";
-    state.draft = input.value;
     $("#qCount").textContent = String(input.value.length);
     input.placeholder = i === 2 ? "Sıradaki katılımcıya bir soru bırak..." : "Hayallerinin dünyasına adım at...";
     go("question");
@@ -646,9 +813,7 @@
 
     const qInput = $("#qInput");
     qInput.addEventListener("input", () => {
-      state.draft = qInput.value.replace(/\n/g, " ");
       $("#qCount").textContent = String(qInput.value.length);
-      if (state.qIndex < 2) renderInk(); // 3. cevap kuma değil, sıradakine gider
       bumpIdle();
     });
     qInput.addEventListener("keydown", (e) => {
@@ -662,7 +827,7 @@
       const v = qInput.value.replace(/\s+/g, " ").trim();
       if (!v) return;
       state.answers[state.qIndex] = v;
-      state.draft = "";
+      if (state.qIndex < 2) renderInk(); // 3. cevap kuma değil, sıradakine gider
       if (state.qIndex < 2) showQuestion(state.qIndex + 1);
       else go("signature");
     });
@@ -723,7 +888,7 @@
         if (v) state.answers[i] = v;
       });
       go("review");
-      renderInk();
+      rewrite();
     });
 
     $("#releaseBtn").addEventListener("click", release);
@@ -737,16 +902,19 @@
     $("#findForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const words = $$("#findForm input").map((i) => i.value.trim());
-      const hit = store.findBySignature(words);
       const status = $("#findStatus");
+      status.textContent = "Kumda aranıyor...";
+      const hit = await store.findBySignature(words);
       if (!hit) {
-        status.textContent = "Bu imzayla bir hayal bulamadık. Kelimeleri kontrol et — hayaller yalnızca gönderildikleri cihazda saklanır.";
+        status.textContent = SHEET_URL
+          ? "Bu imzayla bir hayal bulamadık. Kelimeleri kontrol et."
+          : "Bu imzayla bir hayal bulamadık. Kelimeleri kontrol et — hayaller yalnızca gönderildikleri cihazda saklanır.";
         return;
       }
       status.textContent = "Hayalin kıyıya vurdu!";
       state.shownDream = hit;
-      state.stickers = hit.stickers || [];
-      renderInk();
+      state.stickers = (hit.stickers || []).map(fromRelative).filter(Boolean);
+      rewrite();
     });
 
     bindStickerPointer();
@@ -821,18 +989,33 @@
   // ------------------------------------------------------------------
   let postcard = null;
 
+  // Simgeler yazı alanına göre oransal saklanır; başka ekranda da yerini bulur.
+  const round = (n) => Math.round(n * 1000) / 1000;
+  function toRelative(s) {
+    const r = writeRect;
+    return { type: s.type, fx: round((s.x - r.x) / r.w), fy: round((s.y - r.y) / r.h), fs: round(s.size / r.w) };
+  }
+  function fromRelative(s) {
+    if (!s || !ICON_PATHS[s.type]) return null;
+    if (s.fx === undefined) return s; // eski kayıt: mutlak konum
+    const r = writeRect;
+    return { type: s.type, x: r.x + s.fx * r.w, y: r.y + s.fy * r.h, size: Math.max(24, s.fs * r.w) };
+  }
+
   async function release() {
     state.selected = -1;
     // Dalgadan önce kumun anlık görüntüsünü kartpostal için al.
+    finishWriting();
     postcard = makePostcard();
     const entry = {
       answers: state.answers.slice(0, 2),
+      question2: state.questions[1] ? state.questions[1].text : "",
+      nextQuestion: state.answers[2] || "",
       signature: state.signature,
-      stickers: state.stickers.map((s) => ({ ...s })),
+      stickers: state.stickers.map(toRelative),
       at: new Date().toISOString(),
     };
     store.addDream(entry);
-    if (state.answers[2]) store.leaveQuestion(state.answers[2]);
     // yeni hayal hemen okyanusta süzülsün
     const lane = Math.floor(Math.random() * 3);
     sea.floaters[lane] = { ...spawnFloater(false, lane), text: entry.answers[0], x: W * 0.3, alpha: 0.7 };
@@ -948,6 +1131,15 @@
       document.fonts.ready.then(renderInk);
     }
     requestAnimationFrame(frame);
+    // Tablodan okyanusu ve soru zincirini düzenli olarak tazele.
+    if (SHEET_URL) {
+      store.flush();
+      store.refresh();
+      setInterval(() => {
+        store.flush();
+        store.refresh();
+      }, (OCEAN_ONLY ? 20 : 60) * 1000);
+    }
   }
 
   start();
