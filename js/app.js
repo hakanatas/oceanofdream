@@ -12,7 +12,7 @@
     eventName: "FTC Türkiye",
     // Google E-Tablolar bağlantısı (README → "Hayalleri tabloda topla").
     // Boş bırakılırsa hayaller yalnızca bu tarayıcıda saklanır.
-    sheetUrl: "",
+    sheetUrl: "https://script.google.com/macros/s/AKfycbzvGpNZLuV97GC4-L528UgOlH4z5EdGNJ_g5ohB9jZed0FyA02pdNAXyITFqoR6xFou/exec",
     kioskResetSeconds: 60,
     firstQuestion: "Robotum dünyada tek bir şeyi değiştirebilseydi, ...",
     giveQuestion: "Sıra sende... sıradaki katılımcıya ne sormak istersin?",
