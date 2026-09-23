@@ -220,12 +220,22 @@
   const ctx = canvas.getContext("2d");
   const ink = document.createElement("canvas");
   const inkCtx = ink.getContext("2d");
+  // Kazıma katmanları: harf şekli (mask), ara işlem (tmp), yarım satır (lineTmp), dökülen kum (spill)
+  const mask = document.createElement("canvas");
+  const maskCtx = mask.getContext("2d");
+  const tmp = document.createElement("canvas");
+  const tmpCtx = tmp.getContext("2d");
+  const lineTmp = document.createElement("canvas");
+  const lineCtx = lineTmp.getContext("2d");
+  const spill = document.createElement("canvas");
+  const spillCtx = spill.getContext("2d");
   let sandTex = document.createElement("canvas");
   let W = 0, H = 0, DPR = 1;
   let writeRect = { x: 0, y: 0, w: 0, h: 0 };
 
   const sea = {
     surge: 0, // 0 = sakin, 1 = tüm kumu kaplıyor
+    tide: null, // şu anki su seviyesi (ekran yüksekliğine oranı)
     surgeAnim: null,
     wet: [], // her sütun için ıslak kum sınırı
     floaters: [],
@@ -236,12 +246,12 @@
     DPR = Math.min(window.devicePixelRatio || 1, 1.75);
     W = Math.round(r.width);
     H = Math.round(r.height);
-    for (const c of [canvas, ink]) {
+    for (const c of [canvas, ink, mask, tmp, lineTmp, spill]) {
       c.width = Math.round(W * DPR);
       c.height = Math.round(H * DPR);
     }
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    inkCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    for (const c of [ctx, inkCtx, maskCtx, tmpCtx, lineCtx, spillCtx]) c.setTransform(DPR, 0, 0, DPR, 0, 0);
+    sea.floaters = [];
     buildSand();
     sea.wet = new Array(Math.ceil(W / 8) + 2).fill(0);
     layout();
@@ -286,10 +296,17 @@
 
   const isMobile = () => W < 720;
 
+  // Gelgit: yazı yazılmazken okyanus kumun yarısına kadar gelir, hayaller geniş alanda süzülür;
+  // yazmaya başlayınca çekilir.
+  function tideTarget() {
+    if (OCEAN_ONLY) return 0.88;
+    const high = ["intro", "consent", "released"].includes(state.step);
+    if (isMobile()) return high ? 0.4 : 0.13;
+    return high ? 0.52 : 0.17;
+  }
   function ambientLevel(t) {
-    const base = isMobile() ? 0.13 : 0.17;
     const amp = REDUCED ? 0.01 : 0.035;
-    return base + amp * Math.sin(t * 0.33) + amp * 0.6 * Math.sin(t * 0.81 + 1.3);
+    return sea.tide + amp * Math.sin(t * 0.33) + amp * 0.6 * Math.sin(t * 0.81 + 1.3);
   }
 
   function waterline(x, t, level) {
@@ -326,19 +343,6 @@
   // ------------------------------------------------------------------
   // Kuma yazı
   // ------------------------------------------------------------------
-  function engrave(c, draw) {
-    // Oluk: koyu gölge + açık kenar + gövde
-    c.save();
-    c.translate(1.2, 1.6);
-    draw("rgba(74,50,26,0.55)");
-    c.restore();
-    c.save();
-    c.translate(-1, -1);
-    draw("rgba(255,247,228,0.6)");
-    c.restore();
-    draw("rgba(150,110,66,0.78)");
-  }
-
   function wrapLines(c, text, maxW) {
     const words = text.split(/\s+/).filter(Boolean);
     const lines = [];
@@ -370,18 +374,21 @@
   }
 
   // Kuma yazma: parmak harf harf ilerler. `shown`, yazılmış karakter sayısı.
-  const writing = { shown: 0, total: 0, tip: null, speed: 16 };
+  const writing = { shown: 0, total: 0, tip: null, speed: 13 };
   const grains = [];
 
   function renderInk() {
     if (sea.surgeAnim) return; // dalga yazıyı silerken yeniden çizme
     inkCtx.clearRect(0, 0, W, H);
+    maskCtx.clearRect(0, 0, W, H);
     const blocks = messageBlocks();
     const r = writeRect;
     writing.tip = null;
+    if (!blocks.length && !state.stickers.length) spillCtx.clearRect(0, 0, W, H);
     if (r.w < 60 || r.h < 40) return;
 
     let total = 0;
+    let depth = 2;
     if (blocks.length) {
       // En büyük yazı boyutunu, her şey alana sığana kadar küçült.
       let base = Math.min(64, r.w / 8, isMobile() ? 40 : 64);
@@ -391,8 +398,8 @@
         let y = 0;
         for (const b of blocks) {
           const size = base * b.size;
-          inkCtx.font = `700 ${size}px Caveat, cursive`;
-          const lines = wrapLines(inkCtx, b.text, r.w);
+          maskCtx.font = `700 ${size}px Caveat, cursive`;
+          const lines = wrapLines(maskCtx, b.text, r.w);
           laid.push({ ...b, px: size, lines, y });
           y += lines.length * size * 1.02 + size * 0.45;
         }
@@ -402,49 +409,117 @@
         }
         base *= 0.92;
       }
+      depth = Math.max(0.9, Math.min(2.6, base * 0.04));
       for (const b of laid) for (const ln of b.lines) total += ln.length;
       if (REDUCED) writing.shown = total;
       writing.shown = Math.min(writing.shown, total);
 
       let budget = writing.shown;
-      let oy = r.y + Math.max(0, (r.h - laid.total) / 2);
-      inkCtx.textBaseline = "top";
+      const oy = r.y + Math.max(0, (r.h - laid.total) / 2);
       for (const b of laid) {
-        inkCtx.font = `700 ${b.px}px Caveat, cursive`;
+        const font = `700 ${b.px}px Caveat, cursive`;
         b.lines.forEach((ln, i) => {
           if (budget <= 0) return;
           const tx = r.x;
           const ty = oy + b.y + i * b.px * 1.02;
           const k = Math.min(ln.length, budget);
           budget -= k;
-          const done = k >= ln.length;
-          let clipW;
-          if (done) clipW = inkCtx.measureText(ln).width + b.px;
-          else {
-            const whole = Math.floor(k);
-            clipW =
-              inkCtx.measureText(ln.slice(0, whole)).width +
-              inkCtx.measureText(ln[whole]).width * (k - whole);
-            writing.tip = { x: tx + clipW, y: ty + b.px * 0.62, size: b.px };
+          if (k >= ln.length) {
+            maskCtx.font = font;
+            maskCtx.textBaseline = "top";
+            maskCtx.fillStyle = "#fff";
+            maskCtx.fillText(ln, tx, ty);
+            return;
           }
-          inkCtx.save();
-          inkCtx.beginPath();
-          inkCtx.rect(tx - b.px * 0.4, ty - b.px * 0.4, clipW + b.px * 0.4, b.px * 1.8);
-          inkCtx.clip();
-          engrave(inkCtx, (col) => {
-            inkCtx.fillStyle = col;
-            inkCtx.fillText(ln, tx, ty);
-          });
-          inkCtx.restore();
+          // Yarım satır: parmağın arkasında oyuk yumuşakça derinleşir.
+          lineCtx.clearRect(0, 0, W, H);
+          lineCtx.font = font;
+          lineCtx.textBaseline = "top";
+          lineCtx.fillStyle = "#fff";
+          lineCtx.fillText(ln, tx, ty);
+          const whole = Math.floor(k);
+          const tipX =
+            tx + lineCtx.measureText(ln.slice(0, whole)).width + lineCtx.measureText(ln[whole]).width * (k - whole);
+          const soft = b.px * 0.5;
+          const g = lineCtx.createLinearGradient(tipX - soft, 0, tipX, 0);
+          g.addColorStop(0, "rgba(0,0,0,0)");
+          g.addColorStop(1, "rgba(0,0,0,1)");
+          lineCtx.globalCompositeOperation = "destination-out";
+          lineCtx.fillStyle = g;
+          lineCtx.fillRect(tipX - soft, ty - b.px, W - tipX + soft + b.px, b.px * 3);
+          lineCtx.globalCompositeOperation = "source-over";
+          blitFull(maskCtx, lineTmp);
+          writing.tip = { x: tipX, y: ty + b.px * 0.6, size: b.px };
         });
       }
     }
     writing.total = total;
 
-    for (const s of state.stickers) drawSticker(inkCtx, s);
+    for (const s of state.stickers) drawSticker(maskCtx, s);
+    carve(depth);
 
     const txt = blocks.map((b) => b.text).join(". ");
     document.getElementById("sandText").textContent = txt ? "Kuma yazılan: " + txt : "";
+  }
+
+  // Aynı boyuttaki iki canvas arasında, isteğe bağlı kaydırmayla kopyala.
+  function blitFull(dc, src, ox = 0, oy = 0) {
+    dc.save();
+    dc.setTransform(1, 0, 0, 1, 0, 0);
+    dc.drawImage(src, ox * DPR, oy * DPR);
+    dc.restore();
+  }
+
+  // mask'taki harf şekillerini kuma kazı: yanlara itilmiş kum, dokulu oyuk tabanı,
+  // gölgede kalan iç duvar, ışık alan iç duvar. Işık sol üstten gelir.
+  function carve(d) {
+    const far = 10000;
+    // 1) Oyuğun çevresinde kabaran kum: ışıkta kalan sırt ve arkasındaki yumuşak gölge
+    const halo = (color, ox, oy, blur) => {
+      inkCtx.save();
+      inkCtx.setTransform(1, 0, 0, 1, 0, 0);
+      inkCtx.shadowColor = color;
+      inkCtx.shadowBlur = blur * DPR;
+      inkCtx.shadowOffsetX = (ox - far) * DPR;
+      inkCtx.shadowOffsetY = oy * DPR;
+      inkCtx.drawImage(mask, far * DPR, 0);
+      inkCtx.restore();
+    };
+    halo("rgba(255,247,228,0.75)", -d * 1.1, -d * 1.3, d * 2.2);
+    halo("rgba(96,66,36,0.32)", d * 1.4, d * 1.7, d * 2.4);
+
+    // 2) Oyuk tabanı: kumun kendi dokusu, daha koyu ve nemli
+    tmpCtx.save();
+    tmpCtx.setTransform(1, 0, 0, 1, 0, 0);
+    tmpCtx.globalCompositeOperation = "copy";
+    tmpCtx.drawImage(sandTex, 0, 0, tmp.width, tmp.height);
+    tmpCtx.globalCompositeOperation = "destination-in";
+    tmpCtx.drawImage(mask, 0, 0);
+    tmpCtx.globalCompositeOperation = "source-atop";
+    tmpCtx.fillStyle = "rgba(104,72,40,0.42)";
+    tmpCtx.fillRect(0, 0, tmp.width, tmp.height);
+    tmpCtx.restore();
+    blitFull(inkCtx, tmp);
+
+    // 3) İç duvarlar: şekil eksi kaydırılmış şekli = kenar bandı
+    const wall = (color, ox, oy) => {
+      tmpCtx.save();
+      tmpCtx.setTransform(1, 0, 0, 1, 0, 0);
+      tmpCtx.globalCompositeOperation = "copy";
+      tmpCtx.drawImage(mask, 0, 0);
+      tmpCtx.globalCompositeOperation = "destination-out";
+      tmpCtx.drawImage(mask, ox * DPR, oy * DPR);
+      tmpCtx.globalCompositeOperation = "source-in";
+      tmpCtx.fillStyle = color;
+      tmpCtx.fillRect(0, 0, tmp.width, tmp.height);
+      tmpCtx.restore();
+      blitFull(inkCtx, tmp);
+    };
+    wall("rgba(58,36,16,0.62)", d, d * 1.15); // sol üst duvar gölgede
+    wall("rgba(255,238,206,0.5)", -d * 0.7, -d * 0.8); // sağ alt duvar ışıkta
+
+    // 4) Kenarlara dökülen kum taneleri
+    blitFull(inkCtx, spill);
   }
 
   // Yazıyı baştan, yeniden yazdır.
@@ -465,14 +540,16 @@
       renderInk();
       const tip = writing.tip;
       if (tip) {
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const v = 25 + Math.random() * 55;
           grains.push({
-            x: tip.x + (Math.random() - 0.5) * 4,
-            y: tip.y + (Math.random() - 0.5) * tip.size * 0.5,
-            vx: (Math.random() - 0.2) * 70,
-            vy: (Math.random() - 0.5) * 70,
-            life: 0.35 + Math.random() * 0.45,
-            r: 0.7 + Math.random() * 1.5,
+            x: tip.x + (Math.random() - 0.5) * 6,
+            y: tip.y + (Math.random() - 0.5) * tip.size * 0.6,
+            vx: Math.cos(a) * v + 20,
+            vy: Math.sin(a) * v,
+            life: 0.2 + Math.random() * 0.35,
+            r: 0.6 + Math.random() * 1.2,
           });
         }
       }
@@ -484,7 +561,16 @@
       g.vx *= 0.9;
       g.vy *= 0.9;
       g.life -= dt;
-      if (g.life <= 0) grains.splice(i, 1);
+      if (g.life <= 0) {
+        // bazı taneler yere düşüp kalır
+        if (Math.random() < 0.55) {
+          spillCtx.fillStyle = Math.random() < 0.6 ? "rgba(120,88,52,0.55)" : "rgba(255,244,222,0.7)";
+          spillCtx.beginPath();
+          spillCtx.arc(g.x, g.y, g.r * 0.7, 0, Math.PI * 2);
+          spillCtx.fill();
+        }
+        grains.splice(i, 1);
+      }
     }
   }
 
@@ -503,52 +589,66 @@
     const tip = writing.tip;
     if (tip && writing.shown < writing.total) {
       // parmak ucunun kumdaki gölgesi
-      const rr = Math.max(8, tip.size * 0.22);
-      const g = ctx.createRadialGradient(tip.x + 2, tip.y + 3, 0, tip.x + 2, tip.y + 3, rr);
-      g.addColorStop(0, "rgba(60,40,20,0.35)");
-      g.addColorStop(1, "rgba(60,40,20,0)");
+      const rr = Math.max(10, tip.size * 0.3);
+      const bob = Math.sin(performance.now() / 90) * tip.size * 0.08;
+      const cx = tip.x + rr * 0.2, cy = tip.y + bob;
+      const g = ctx.createRadialGradient(cx + rr * 0.35, cy + rr * 0.45, 0, cx + rr * 0.35, cy + rr * 0.45, rr * 1.4);
+      g.addColorStop(0, "rgba(50,32,14,0.3)");
+      g.addColorStop(1, "rgba(50,32,14,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(tip.x + 2, tip.y + 3, rr, 0, Math.PI * 2);
+      ctx.arc(cx + rr * 0.35, cy + rr * 0.45, rr * 1.4, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = "rgba(255,246,226,0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr * 0.55, Math.PI * 0.9, Math.PI * 1.9);
+      ctx.stroke();
     }
   }
 
   function drawSticker(c, s) {
     const p = ICON_PATHS[s.type];
-    engrave(c, (col) => {
-      c.save();
-      c.translate(s.x, s.y);
-      c.scale(s.size / 24, s.size / 24);
-      c.translate(-12, -12);
-      c.strokeStyle = col;
-      c.lineWidth = 2.1;
-      c.lineCap = "round";
-      c.lineJoin = "round";
-      c.stroke(p);
-      c.restore();
-    });
+    c.save();
+    c.translate(s.x, s.y);
+    c.scale(s.size / 24, s.size / 24);
+    c.translate(-12, -12);
+    c.strokeStyle = "#fff";
+    c.lineWidth = 2.4;
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    c.stroke(p);
+    c.restore();
   }
 
   // ------------------------------------------------------------------
   // Okyanus çizimi
   // ------------------------------------------------------------------
   function allDreamTexts() {
-    return [...CONFIG.seedDreams, ...store.dreamTexts()];
+    const real = store.dreamTexts();
+    // Yeterince gerçek hayal varsa örnekleri geri çek.
+    return real.length >= 12 ? real : [...CONFIG.seedDreams, ...real];
   }
 
   // Her şeride tek bir hayal: yazılar üst üste binmez.
-  const LANES = 14;
+  const laneTop = () => (OCEAN_ONLY ? 48 : 70);
+  const laneHeight = () => (OCEAN_ONLY ? Math.max(62, H / 11) : isMobile() ? 42 : 50);
+  const laneCount = () => Math.max(3, Math.floor((H - laneTop()) / laneHeight()));
   function spawnFloater(fresh, lane) {
-    const texts = allDreamTexts();
+    // Ekranda zaten süzülen hayalleri tekrar seçme.
+    const showing = new Set(sea.floaters.map((f) => f && f.text));
+    const all = allDreamTexts();
+    const unused = all.filter((t) => !showing.has(t));
+    const texts = unused.length ? unused : all;
     const dir = lane % 2 ? -1 : 1;
+    const big = OCEAN_ONLY ? 1.6 : 1;
     return {
       lane,
       text: texts[Math.floor(Math.random() * texts.length)],
       x: fresh ? Math.random() * W * 0.8 : dir > 0 ? -W * (0.2 + Math.random() * 0.6) : W + W * Math.random() * 0.6,
-      speed: dir * (10 + Math.random() * 14),
-      size: 20 + Math.random() * 8,
-      alpha: 0.3 + Math.random() * 0.3,
+      speed: dir * (10 + Math.random() * 14) * (OCEAN_ONLY ? 0.8 : 1),
+      size: (isMobile() ? 20 : 24) * big + Math.random() * 8 * big,
+      alpha: OCEAN_ONLY ? 0.55 + Math.random() * 0.35 : 0.4 + Math.random() * 0.35,
     };
   }
 
@@ -604,18 +704,23 @@
     }
 
     // Süzülen hayaller
-    if (!sea.floaters.length) for (let i = 0; i < LANES; i++) sea.floaters.push(spawnFloater(true, i));
+    if (!sea.floaters.length) for (let i = 0; i < laneCount(); i++) sea.floaters.push(spawnFloater(true, i));
     ctx.textBaseline = "middle";
-    const laneH = Math.max(44, H / LANES);
+    const laneH = laneHeight();
     sea.floaters.forEach((f, i) => {
       f.x += f.speed * dt;
       ctx.font = `600 ${f.size}px Caveat, cursive`;
       const w = ctx.measureText(f.text).width;
       if ((f.speed > 0 && f.x > W + 40) || (f.speed < 0 && f.x + w < -60)) sea.floaters[i] = spawnFloater(false, f.lane);
-      const y = 64 + f.lane * laneH + 4 * Math.sin(t * 0.8 + i);
-      if (y > lineY - 24) return;
-      ctx.fillStyle = `rgba(232,244,240,${f.alpha})`;
+      const y = laneTop() + f.lane * laneH + 4 * Math.sin(t * 0.8 + i);
+      if (y > lineY - f.size * 0.9) return;
+      // Kıyıya yaklaştıkça hafifçe sönümlen
+      const fade = Math.min(1, (lineY - f.size * 0.9 - y) / 40);
+      ctx.fillStyle = `rgba(232,244,240,${f.alpha * fade})`;
+      ctx.shadowColor = "rgba(5,20,25,0.35)";
+      ctx.shadowBlur = 6;
       ctx.fillText(f.text, f.x, y);
+      ctx.shadowBlur = 0;
     });
     ctx.restore();
 
@@ -660,6 +765,7 @@
     inkCtx.fillStyle = "rgba(0,0,0,0.07)";
     inkCtx.fill();
     inkCtx.restore();
+    spillCtx.clearRect(0, 0, W, H);
   }
 
   function drawSelection() {
@@ -699,6 +805,8 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const t = now / 1000;
+    if (sea.tide === null) sea.tide = tideTarget();
+    sea.tide += (tideTarget() - sea.tide) * Math.min(1, dt * 0.7);
     if (sea.surgeAnim) sea.surgeAnim(now);
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(sandTex, 0, 0, W, H);

@@ -13,6 +13,9 @@
  *   - Bir hayali düzeltmek için hücreyi düzenle.
  *   - Silmek için satırı sil.
  *   - Gizlemek için "Durum" sütununu "gizli" yap (veya menüden: Hayaller → Gizle).
+ *   - Menüden "Yalnızca bekleyenleri göster" ile onay bekleyenleri süz.
+ *
+ * Renkler: yeni = sarı (bekliyor), onaylı = yeşil, gizli = gri ve üstü çizili.
  */
 
 // true: yalnızca "onaylı" hayaller okyanusta görünür (ön onay).
@@ -48,6 +51,36 @@ function sayfa_() {
     sh.getRange(2, S.cevap1 + 1, sh.getMaxRows() - 1, BASLIKLAR.length - S.cevap1).setNumberFormat("@");
   }
   return sh;
+}
+
+// Satırları duruma göre renklendir. Her açılışta yeniden kurulur; elle eklenen
+// başka koşullu biçimlendirmeler korunur.
+var RENKLER = [
+  { durum: "yeni", arka: "#FFF4C2", yazi: "#5C4700", cizili: false },
+  { durum: "onaylı", arka: "#D8F0DC", yazi: "#1E4D2B", cizili: false },
+  { durum: "gizli", arka: "#E8E8E8", yazi: "#8A8A8A", cizili: true },
+];
+function renklendir_(sh) {
+  var aralik = sh.getRange(2, 1, sh.getMaxRows() - 1, BASLIKLAR.length);
+  var sutun = String.fromCharCode(65 + S.durum); // C
+  var bizim = RENKLER.map(function (r) {
+    return '=$' + sutun + '2="' + r.durum + '"';
+  });
+  var digerleri = sh.getConditionalFormatRules().filter(function (kural) {
+    var kosul = kural.getBooleanCondition();
+    var degerler = kosul ? kosul.getCriteriaValues() : [];
+    return !(degerler.length && bizim.indexOf(String(degerler[0])) >= 0);
+  });
+  var yeniler = RENKLER.map(function (r, i) {
+    return SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(bizim[i])
+      .setBackground(r.arka)
+      .setFontColor(r.yazi)
+      .setStrikethrough(r.cizili)
+      .setRanges([aralik])
+      .build();
+  });
+  sh.setConditionalFormatRules(digerleri.concat(yeniler));
 }
 
 // Tek satır metin, uzunluk sınırı ve formül enjeksiyonuna karşı koruma.
@@ -176,8 +209,26 @@ function onOpen() {
     .createMenu("Hayaller")
     .addItem("Seçili satırları onayla", "onayla")
     .addItem("Seçili satırları gizle", "gizle")
+    .addSeparator()
+    .addItem("Yalnızca bekleyenleri göster", "bekleyenler")
+    .addItem("Hepsini göster", "hepsi")
     .addToUi();
-  sayfa_();
+  renklendir_(sayfa_());
+}
+
+// "Durum" sütununa filtre: yalnızca "yeni" satırlar görünür.
+function bekleyenler() {
+  var sh = sayfa_();
+  SpreadsheetApp.setActiveSheet(sh);
+  var filtre = sh.getFilter() || sh.getRange(1, 1, sh.getMaxRows(), BASLIKLAR.length).createFilter();
+  filtre.setColumnFilterCriteria(
+    S.durum + 1,
+    SpreadsheetApp.newFilterCriteria().setHiddenValues(["onaylı", "gizli"]).build()
+  );
+}
+function hepsi() {
+  var filtre = sayfa_().getFilter();
+  if (filtre) filtre.removeColumnFilterCriteria(S.durum + 1);
 }
 function durumYaz_(deger) {
   var sh = SpreadsheetApp.getActiveSheet();

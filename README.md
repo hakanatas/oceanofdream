@@ -76,7 +76,12 @@ değişiklikleri birkaç saniye içinde görür. Sunucu kurmak veya ücret ödem
 | --- | --- |
 | Yazım hatasını düzelt / cümleyi değiştir | Hücreyi doğrudan düzenle |
 | Uygunsuz bir hayali kaldır | "Durum" sütununu **gizli** yap (menü: **Hayaller → Seçili satırları gizle**) ya da satırı sil |
+| Onay bekleyenleri gör | Sarı satırlar bekleyenlerdir; menü: **Hayaller → Yalnızca bekleyenleri göster** (geri almak için **Hepsini göster**) |
+| Onayla | Durum hücresinden **onaylı** seç ya da satırları seçip **Hayaller → Seçili satırları onayla** (satır yeşile döner) |
 | Önce onaylamadan hiçbir şey görünmesin | `Code.gs` içinde `ONAY_BEKLE = true` yap, sonra **Dağıt → Dağıtımları yönet → Düzenle → Yeni sürüm**. Bu durumda yalnızca **onaylı** satırlar okyanusta görünür |
+
+Renkler: **sarı** = yeni (bekliyor), **yeşil** = onaylı, **gri ve üstü çizili** = gizli.
+Renkler ve menü tablo her açıldığında kurulur.
 
 Gizli satırlar okyanusta süzülmez, "Hayalimi bul" ile de bulunamaz ve soru zincirine girmez.
 Formül gibi görünen girdiler (`=`, `+`, `-`, `@` ile başlayan) tabloya düz metin olarak yazılır.
